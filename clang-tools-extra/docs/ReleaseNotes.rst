@@ -168,6 +168,11 @@ New checks
 
   Detects unmodified local variables and suggest adding ``const`` if the transformation is possible.
 
+- New :doc:`misc-no-implicit-conversions
+  <clang-tidy/checks/misc/no-implicit-conversions>` check.
+
+  FIXME: add release notes.
+
 - New :doc:`modernize-macro-to-enum
   <clang-tidy/checks/modernize/macro-to-enum>` check.
 

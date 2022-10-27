@@ -36,6 +36,7 @@ add_clang_library(clangTidyMiscModule
   MisleadingIdentifier.cpp
   MisplacedConstCheck.cpp
   NewDeleteOverloadsCheck.cpp
+  NoImplicitConversionsCheck.cpp
   NoRecursionCheck.cpp
   NonCopyableObjects.cpp
   NonPrivateMemberVariablesInClassesCheck.cpp

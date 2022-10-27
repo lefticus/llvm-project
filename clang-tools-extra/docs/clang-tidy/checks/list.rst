@@ -245,6 +245,7 @@ Clang-Tidy Checks
    `misc-misleading-identifier <misc/misleading-identifier.html>`_,
    `misc-misplaced-const <misc/misplaced-const.html>`_,
    `misc-new-delete-overloads <misc/new-delete-overloads.html>`_,
+   `misc-no-implicit-conversions <misc/no-implicit-conversions.html>`_, "Yes"
    `misc-no-recursion <misc/no-recursion.html>`_,
    `misc-non-copyable-objects <misc/non-copyable-objects.html>`_,
    `misc-non-private-member-variables-in-classes <misc/non-private-member-variables-in-classes.html>`_,
