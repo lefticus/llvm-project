@@ -24,11 +24,11 @@ void NoImplicitConversionsCheck::registerMatchers(MatchFinder *Finder) {
               hasCastKind(CK_LValueToRValue),
               hasCastKind(CK_FunctionToPointerDecay), hasCastKind(CK_NoOp),
               hasCastKind(CK_UncheckedDerivedToBase),
-              allOf(hasCastKind(CK_ArrayToPointerDecay),
-                    hasDescendant(stringLiteral())),
-              allOf(hasCastKind(CK_IntegralCast),
-                    hasDescendant(integerLiteral())),
-              hasCastKind(CK_NullToPointer), hasParent(cxxStaticCastExpr()),
+              allOf(hasCastKind(CK_ArrayToPointerDecay), has(stringLiteral())),
+              allOf(hasCastKind(CK_IntegralCast), has(integerLiteral())),
+              allOf(has(cxxNullPtrLiteralExpr()),
+                    hasCastKind(CK_NullToPointer)),
+              hasParent(cxxStaticCastExpr()),
               allOf(hasCastKind(CK_IntegralCast), hasParent(switchStmt())),
               allOf(hasCastKind(CK_IntegralCast),
                     hasParent(constantExpr(hasParent(caseStmt())))),
@@ -53,8 +53,10 @@ const clang::Expr *getFromExpression(const clang::Expr *Expression,
   if (Expression != nullptr && !Expression->children().empty()) {
     const auto *Expr = dyn_cast<clang::Expr>(*Expression->children().begin());
 
-    if (Expr) {
-      if (Expr->getType() != ResultType) {
+    if (Expr != nullptr) {
+      if (dyn_cast<clang::MemberExpr>(Expr) == nullptr &&
+          Expr->getType().withoutLocalFastQualifiers() !=
+              ResultType.withoutLocalFastQualifiers()) {
         return Expr;
       }
 
@@ -66,34 +68,63 @@ const clang::Expr *getFromExpression(const clang::Expr *Expression,
 }
 
 void NoImplicitConversionsCheck::check(const MatchFinder::MatchResult &Result) {
-  const auto PrintCast = [this](const auto *Matched) {
+  const auto PrintCast = [&, this](const Expr *Matched) {
     if (Matched != nullptr) {
       const auto *FromExpr = getFromExpression(Matched, Matched->getType());
 
-      diag(Matched->getBeginLoc(),
-           "Implicit cast invoked to '%1' from '%2' (%0)")
-          << Matched->getCastKindName() << Matched->getType().getAsString()
-          << FromExpr->getType().getAsString();
+      const auto Description = [&]() -> llvm::StringRef {
+        if (Matched->getType()->isStructureOrClassType()) {
+          // result type is not a built-in type
+
+          if (Result.Context != nullptr &&
+              !Matched->getType().isTriviallyCopyableType(*Result.Context)) {
+            return " creates new non-trivial object";
+          }
+          // result type is trivial if we get here
+          if (Result.Context != nullptr &&
+              !FromExpr->getType().isTriviallyCopyableType(*Result.Context)) {
+            // and from type is non-trivial
+            return ", potential for dangling reference detected";
+          }
+          
+          return " creates new object";
+        }
+
+        if (Matched->getType()->isPointerType()) {
+          return ", use nullptr instead";
+        }
+
+        for (const auto &Parent :
+             Result.Context->getParentMapContext().getParents(*Matched)) {
+          if (Parent.get<CallExpr>() != nullptr) {
+            return " affects overload resolution, and might change meaning if "
+                   "more overloads are added";
+          }
+        }
+
+        return " affects readability";
+      }();
+
+      diag(Matched->getExprLoc(), "implicit conversion from %0 to %1%2")
+          << FromExpr->getType().withoutLocalFastQualifiers()
+          << Matched->getType().withoutLocalFastQualifiers() << Description;
     }
   };
 
   PrintCast(Result.Nodes.getNodeAs<ImplicitCastExpr>("cast"));
+  PrintCast(Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("temporary"));
 
-  const auto PrintTemporary = [this](const MaterializeTemporaryExpr *Matched) {
+  const auto PrintSlicing = [this](const Expr *Matched) {
     if (Matched != nullptr) {
       const auto *FromExpr = getFromExpression(Matched, Matched->getType());
-      diag(Matched->getBeginLoc(), "Implicit cast invoked to '%0' from '%1'")
-          << Matched->getType().getAsString()
-          << FromExpr->getType().getAsString();
+
+      diag(Matched->getExprLoc(), "implicit conversion from %0 to %1 causes "
+                                  "slicing and creates new object")
+          << FromExpr->getType().withoutLocalFastQualifiers()
+          << Matched->getType().withoutLocalFastQualifiers();
     }
   };
-
-  PrintTemporary(Result.Nodes.getNodeAs<MaterializeTemporaryExpr>("temporary"));
-
-  const auto *SlicedDecl = Result.Nodes.getNodeAs<CXXConstructExpr>("slice");
-  if (SlicedDecl != nullptr) {
-    diag(SlicedDecl->getLocation(), "Implicit conversion resulting in slicing");
-  }
+  PrintSlicing(Result.Nodes.getNodeAs<CXXConstructExpr>("slice"));
 }
 
 } // namespace misc
